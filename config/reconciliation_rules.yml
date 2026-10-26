@@ -1,0 +1,13 @@
+version: 1
+amount_tolerance: "0.01"
+supported_transaction_types:
+  SALE:
+    key: [order_id, item_code, marketplace, transaction_type]
+  REFUND:
+    key: [order_id, item_code, marketplace, transaction_type]
+  ADJUSTMENT:
+    key: [item_code, marketplace, transaction_type, transaction_date]
+  ACCOUNT_FEE:
+    key: [account_id, marketplace, transaction_type, settlement_batch]
+validation_order: [candidate_key, currency, amount]
+

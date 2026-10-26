@@ -1,0 +1,10 @@
+version: 1
+checks:
+  - missing_required_key
+  - invalid_date
+  - invalid_amount
+  - exact_duplicate_ledger_row
+  - duplicate_platform_record_id
+  - duplicate_ledger_entry_id
+  - unsupported_transaction_type
+

@@ -1,0 +1,23 @@
+{
+  "result_rows": 6300,
+  "result_counts": {
+    "matched": 4417,
+    "unsupported_rule": 329,
+    "ambiguous_candidate": 320,
+    "ledger_only": 300,
+    "amount_mismatch": 295,
+    "platform_only": 280,
+    "currency_mismatch": 188,
+    "invalid_key": 171
+  },
+  "quality_issue_rows": 562,
+  "quality_counts": {
+    "unsupported_transaction_type": 329,
+    "missing_required_key": 171,
+    "exact_duplicate_ledger_row": 62
+  },
+  "platform_rows": 6000,
+  "ledger_rows": 9771,
+  "ledger_events": 5676,
+  "seed": 20261026
+}

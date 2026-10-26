@@ -1,0 +1,22 @@
+Test run date: 2026-10-26
+Environment: isolated project virtual environment
+Command: python -m pytest
+
+Result:
+..............                                                           [100%]
+14 passed in 0.86s
+
+Coverage scope:
+- identifier precision and leading zeroes
+- Decimal amount parsing and arithmetic
+- one-to-many ledger aggregation
+- amount mismatch classification
+- currency mismatch classification
+- ambiguous candidates
+- platform-only and ledger-only records
+- missing required business keys
+- unsupported transaction rules
+- exact duplicate ledger handling
+- result-count conservation
+- generated end-to-end scenario coverage
+

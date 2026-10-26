@@ -1,0 +1,4 @@
+issue_type,issue_count
+unsupported_transaction_type,329
+missing_required_key,171
+exact_duplicate_ledger_row,62
