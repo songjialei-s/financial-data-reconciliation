@@ -1,8 +1,185 @@
-# Financial Data Reconciliation
+# 财务数据自动对账｜Financial Data Reconciliation
 
-[English](#english) | [中文](#中文)
+基于 Python、Pandas 与 SQLite 的财务对账分析项目，使用可复现的合成数据，演示从平台交易与内部账务明细的标准化、粒度对齐、业务键匹配，到差异分类和异常追溯的完整流程。
 
-![Reconciliation results](reports/figures/reconciliation_results.png)
+[中文说明](#中文) · [English](#english) · [核查方法](docs/methodology.md) · [数据字典](docs/data_dictionary.md)
+
+> 全部数据由固定随机种子生成，用于作品展示与方法验证，不包含真实客户、雇主数据或生产凭据。
+
+![对账结果分布](reports/figures/reconciliation_results.png)
+
+## 中文
+
+### ✨ 核心功能
+
+| 模块 | 实现内容 |
+| --- | --- |
+| 合成数据生成 | 固定种子生成交易、账务明细及注入场景标签 |
+| 数据标准化 | 保留字符串 ID，统一日期、币种及文本，使用 Decimal 解析金额 |
+| 数据质量检查 | 缺失键、无效日期与金额、未知类型、重复标识及重复账务内容 |
+| 一对多聚合 | 账务组件先按事件、业务键与币种聚合，再参与匹配 |
+| 分类匹配 | 销售、退款、调整、账户费用分别使用业务键 |
+| 双向核查 | 每笔平台交易输出判断，追加未被消费的账务事件 |
+| 异常追溯 | 输出来源标识、候选数量、金额及差异原因 |
+| 结果展示 | CSV、SQLite、PNG 图表与 JSON 指标；另附 Excel 示例报告 |
+
+### 📌 业务背景与处理原则
+
+平台报表可能用一行净额表示交易，而内部账务把同一事件拆成多个金额组件。直接逐行连接容易重复累计；仅凭金额相近寻找记录，也可能产生错误匹配。
+
+本项目先对齐数据粒度，再通过业务键寻找候选，依次检查候选数量、币种和金额。金额用于验证，不作为交易身份标识；多个候选保留为歧义结果，供人工复核。
+
+### 🛠 技术栈
+
+| 技术 | 用途 |
+| --- | --- |
+| Python 3.10+ / Pandas | 数据生成、清洗、聚合与对账 |
+| Decimal / 整数分 | 金额解析及聚合比较 |
+| SQLite / SQL | 本地数据落库与分析查询 |
+| Matplotlib | 对账数量、占比和数据质量图表 |
+| Pytest | 标准化、生成器与对账规则测试 |
+| setuptools | 项目安装和命令行入口 |
+
+### 🏗 处理流程
+
+```mermaid
+flowchart LR
+    A[合成平台交易] --> C[标准化与质量检查]
+    B[合成账务明细] --> C
+    C --> D[账务去重与事件聚合]
+    D --> E[按交易类型寻找业务键候选]
+    E --> F[候选数量 → 币种 → 金额验证]
+    F --> G[平台侧对账结果]
+    F --> H[未消费账务事件反向核查]
+    G --> I[CSV / SQLite / JSON / 图表]
+    H --> I
+```
+
+详细规则见[方法文档](docs/methodology.md)。歧义候选在匹配尝试中标记为已消费，避免再次错误计入账务单边记录。
+
+### 📊 数据粒度与匹配规则
+
+| 数据层 | 一行代表 |
+| --- | --- |
+| `platform_transactions` | 一笔平台交易净额 |
+| `ledger_entries` | 一个账务金额组件 |
+| 账务聚合层 | 一个事件及业务键、币种组合 |
+| `reconciliation_results` | 一次平台侧判断或一个账务单边事件 |
+
+| 交易类型 | 候选业务键 |
+| --- | --- |
+| `SALE` / `REFUND` | 订单 ID + 商品编码 + Marketplace + 交易类型 |
+| `ADJUSTMENT` | 商品编码 + Marketplace + 交易类型 + 交易日期 |
+| `ACCOUNT_FEE` | 账户 ID + Marketplace + 交易类型 + 结算批次 |
+
+当前运行规则定义在 `src/financial_reconciliation/rules.py`。`config/` 中的 YAML 是规则说明文件，当前引擎未加载它们，修改 YAML 不会直接改变运行行为。
+
+### 🔎 对账结果与示例数据
+
+下列数据来自仓库现有的 [run_metrics.json](reports/run_metrics.json)，对应种子 `20261026`，属于合成演示结果。
+
+| 输入与输出规模 | 数量 |
+| --- | ---: |
+| 平台交易 | 6,000 |
+| 账务明细 | 9,771 |
+| 聚合账务事件 | 5,676 |
+| 双向对账结果 | 6,300 |
+
+| 结果分类 | 含义 | 数量 |
+| --- | --- | ---: |
+| `matched` | 匹配通过 | 4,417 |
+| `amount_mismatch` | 金额差异 | 295 |
+| `currency_mismatch` | 币种差异 | 188 |
+| `platform_only` | 仅平台存在 | 280 |
+| `ledger_only` | 仅账务存在 | 300 |
+| `ambiguous_candidate` | 多候选歧义 | 320 |
+| `invalid_key` | 业务键无效 | 171 |
+| `unsupported_rule` | 未支持的交易类型 | 329 |
+
+6,300 条结果由 6,000 条平台判断和 300 条账务单边事件组成。数据质量报告另记录 562 项问题，其中包含 62 条重复账务内容；重复内容在事件聚合前明确排除。质量问题数与对账结果数口径不同，不能相加作为交易总数。
+
+![结果占比](reports/figures/reconciliation_share.png)
+
+![数据质量问题](reports/figures/data_quality_issues.png)
+
+### 🚀 本地运行
+
+在仓库根目录执行：
+
+```bash
+python -m venv .venv
+```
+
+Windows PowerShell：
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+macOS / Linux：
+
+```bash
+source .venv/bin/activate
+```
+
+安装并运行：
+
+```bash
+python -m pip install -e ".[dev]"
+python -m financial_reconciliation.cli all --root . --rows 6000 --seed 20261026
+python -m pytest
+```
+
+安装后也可使用 `reconcile-finance all --root . --rows 6000 --seed 20261026`。`--root` 应指向含 `sql/01_create_tables.sql` 的项目目录。
+
+运行会重新生成 `data/generated/` 内的合成输入和 SQLite 数据库，并覆盖对应的 CSV、JSON 与图表输出。标准 CLI 不会重新生成仓库附带的格式化 Excel 报告；更改种子或行数后，该 Excel 示例不应视作本次运行结果。
+
+### 📂 项目结构
+
+```text
+.
+├── src/financial_reconciliation/
+│   ├── cli.py             # 命令行与流水线编排
+│   ├── generate_data.py   # 合成数据生成
+│   ├── normalize.py       # 标准化
+│   ├── rules.py           # 运行时业务键规则
+│   ├── reconcile.py       # 质量检查、聚合、匹配与分类
+│   ├── database.py        # SQLite 读写
+│   └── report.py          # CSV、JSON 与图表输出
+├── config/                # YAML 规则说明
+├── sql/                   # 建表、对账分析与质量检查 SQL
+├── tests/                 # 自动化测试
+├── docs/                  # 方法、字段、隐私及发布说明
+├── data/generated/        # 合成输入、场景标签与 SQLite
+├── reports/               # 报告、图表及运行指标
+├── pyproject.toml
+├── SECURITY.md
+└── LICENSE
+```
+
+### 📑 输出与测试
+
+| 文件 | 用途 |
+| --- | --- |
+| `reports/reconciliation_results.csv` | 完整可追溯判断明细 |
+| `reports/reconciliation_summary.csv` | 结果数量及占比 |
+| `reports/data_quality_issues.csv` | 行级质量问题 |
+| `reports/data_quality_summary.csv` | 质量分类统计 |
+| `reports/run_metrics.json` | 输入规模、种子及结果指标 |
+| `reports/figures/` | 对账与数据质量图表 |
+| `reports/reconciliation_report.xlsx` | 仓库附带的格式化示例报告 |
+
+仓库原有测试记录为 **14 项通过**，见 [test_report.txt](reports/test_report.txt)。测试覆盖 ID 精度、Decimal 金额、一对多聚合、金额与币种差异、歧义候选、双向缺失、重复处理、未知规则及数量守恒。该记录是已有执行结果，不代表每次修改 README 都重新运行了业务测试。
+
+### 🔒 隐私、边界与改进方向
+
+数据由代码生成，不读取真实业务系统。详见[隐私说明](docs/privacy_and_synthetic_data.md)与[安全说明](SECURITY.md)。项目采用 [MIT License](LICENSE)。
+
+当前版本是本地分析演示，业务键经过简化，未实现外汇换算、跨期日期容差、结算结转或生产级调度与并发控制；合成异常比例不代表真实业务分布。
+
+后续可完善 YAML 配置加载及校验、Excel 自动导出、跨期对账与汇率模块，并增加大规模数据性能验证。
+
+---
 
 ## English
 
@@ -116,7 +293,7 @@ The standard CLI regenerates synthetic CSV data, SQLite tables, reconciliation C
 
 ### Test result
 
-The final local run completed with:
+The committed historical test record reports:
 
 ```text
 14 passed in 0.86s
@@ -136,110 +313,4 @@ Tests cover identifier precision, decimal arithmetic, one-to-many aggregation, a
 ### Privacy
 
 The generator creates every identifier and amount from code using a fixed random seed. It does not read an external dataset, database, API, shared drive, or confidential project folder. See [Privacy and synthetic data](docs/privacy_and_synthetic_data.md).
-
----
-
-## 中文
-
-### 项目概述
-
-本项目使用完全合成的Marketplace交易和内部账务数据，演示从多源标准化、数据粒度对齐、业务键候选匹配、币种与金额验证，到差异分类和异常追溯的完整流程。
-
-项目不包含任何雇主、客户、平台账户、生产数据库、内部系统名称或专有费用映射规则。
-
-### 业务问题
-
-平台报表通常以一行净额表示一笔交易，内部账务系统则可能把同一事件拆成多条金额组件。直接逐行连接可能导致重复计数、遗漏一对多关系，或仅凭相同金额产生误匹配。
-
-本项目按以下顺序处理：
-
-1. 标准化ID、日期、文本、币种和Decimal金额。
-2. 检查缺失业务键、无效值、未知类型和账务重复行。
-3. 先把一对多账务明细聚合到事件粒度。
-4. 根据交易类型使用不同业务键寻找候选。
-5. 依次验证候选数量、币种和金额。
-6. 反向识别只有账务记录、没有平台记录的事件。
-7. 输出记录ID、业务键、候选数量、金额及异常原因。
-
-### 数据结构与粒度
-
-| 数据集 | 粒度 |
-|---|---|
-| 平台交易表 | 一行一笔平台交易净额 |
-| 内部账务表 | 一行一个账务金额组件 |
-| 账务事件聚合层 | 一行一个`event_id`及业务键 |
-| 核查结果 | 一行一个平台判断，并追加账务单边事件 |
-
-通用匹配规则：
-
-| 交易类型 | 候选业务键 |
-|---|---|
-| 销售、退款 | 订单ID + 商品编码 + Marketplace + 交易类型 |
-| 调整 | 商品编码 + Marketplace + 交易类型 + 交易日期 |
-| 账户费用 | 账户ID + Marketplace + 交易类型 + 结算批次 |
-
-金额不用于寻找候选，只在业务键候选确定后进行验证。
-
-### 差异分类
-
-- 完全匹配 `matched`
-- 金额差异 `amount_mismatch`
-- 币种差异 `currency_mismatch`
-- 仅平台存在 `platform_only`
-- 仅账务存在 `ledger_only`
-- 多候选歧义 `ambiguous_candidate`
-- 业务键无效 `invalid_key`
-- 未配置规则 `unsupported_rule`
-
-### 合成数据结果
-
-固定随机种子`20261026`生成：
-
-- 6,000条平台交易
-- 9,771条账务明细
-- 5,676个账务事件
-- 6,300条双向核查结果
-- 4,417条完全匹配
-- 295条金额差异
-- 188条币种差异
-- 280条仅平台存在
-- 300条仅账务存在
-- 320条多候选歧义
-- 171条无效业务键
-- 329条未配置规则
-
-6,300条结果由6,000条平台侧判断和300条账务单边事件组成。62条完全重复的账务明细被单独记录为数据质量问题，并在事件聚合时明确排除。
-
-### 运行方式
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -e ".[dev]"
-python -m financial_reconciliation.cli all --root . --rows 6000 --seed 20261026
-pytest
-```
-
-### 测试结果
-
-最终实际运行结果为：
-
-```text
-14 passed in 0.86s
-```
-
-测试覆盖ID精度、Decimal金额、一对多聚合、金额和币种验证、多候选、双向缺失、重复明细、未知规则及结果数量守恒。
-
-### 已知限制
-
-- 本项目是分析演示，不是生产会计控制。
-- 业务键和交易类型经过通用化简化。
-- 未实现外汇换算。
-- 未实现跨期日期容差和结算批次结转。
-- SQLite适合本地演示，不代表生产规模架构。
-- 合成异常比例用于展示分类，不代表真实业务分布。
-
-### 隐私说明
-
-所有ID和金额均由代码使用固定随机种子生成。程序不会读取外部数据集、数据库、API、共享盘或任何保密项目目录。详细说明见[隐私与合成数据](docs/privacy_and_synthetic_data.md)。
 
